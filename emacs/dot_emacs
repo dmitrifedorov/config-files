@@ -1,0 +1,334 @@
+(recentf-mode 1)
+
+;; keep marked region highlighted
+(transient-mark-mode nil)
+;;(delete-selection-mode 1)
+
+;; KDE printing
+;;(setq ps-lpr-command "kprinter")
+;;(setq ps-paper-type 'letter)
+
+;; I don't remember what it is, but it's important
+(setq magic-keys-mode t)
+
+;; lean UI
+(setq inhibit-startup-message   t)    ; no any startup message
+(setq make-backup-files         nil)  ; no any backup files
+(setq auto-save-list-file-name  nil)  ; no any .saves files
+(setq auto-save-default         nil)  ; no auto saving
+
+(if (fboundp 'scroll-bar-mode) (scroll-bar-mode -1))
+(if (fboundp 'tool-bar-mode) (tool-bar-mode -1))
+;;(if (fboundp 'menu-bar-mode) (menu-bar-mode -1))
+
+;;; for color-based syntax highlighting
+(global-font-lock-mode t)
+(setq font-lock-maximum-decoration t)
+
+;; show file name as window title
+(cond (window-system (setq frame-title-format '("emacs: %b"))))
+
+(setq display-time-day-and-date t)
+(display-time)
+
+;; show line number
+(setq line-number-mode t)
+
+;; replace selection as you type
+(delete-selection-mode t)
+
+;;; ============ minibuffer completion
+
+(defun my-parse-minibuffer ()
+  ;; Extension to the complete word facility of the minibuffer
+  (interactive)
+  (backward-char 4)
+  (setq found t)
+  (cond
+   ((looking-at "vmc") (setq directory "~/dev/head/projects/server/plugins/vmm/common"))
+   (t (setq found nil)))
+  (cond (found (beginning-of-line)
+               (kill-line)
+               (insert directory))
+        (t     (forward-char 4)
+               (minibuffer-complete))))
+
+(define-key minibuffer-local-completion-map " " 'my-parse-minibuffer)
+
+;; ================= generated custom settings
+    
+(custom-set-variables
+  ;; custom-set-variables was added by Custom -- don't edit or cut/paste it!
+  ;; Your init file should contain only one such instance.
+ '(case-fold-search t)
+ '(current-language-environment "Latin-1")
+ '(default-input-method "latin-1-prefix")
+ '(global-font-lock-mode t nil (font-lock))
+ '(mouse-wheel-mode t nil (mwheel))
+ '(nxml-slash-auto-complete-flag t)
+ '(planner-carry-tasks-forward 0)
+ '(save-place t nil (saveplace))
+ '(scroll-bar-mode (-1))
+ '(show-paren-mode t nil (paren))
+ '(speedbar-activity-change-focus-flag t)
+ '(speedbar-mode-specific-contents-flag t)
+ '(speedbar-show-unknown-files t)
+ '(transient-mark-mode t)
+ '(uniquify-buffer-name-style nil nil (uniquify)))
+(custom-set-faces
+  ;; custom-set-faces was added by Custom -- don't edit or cut/paste it!
+  ;; Your init file should contain only one such instance.
+ '(default ((t (:background "gainsboro")))))
+
+;;; =========== Python mode related
+
+(setq auto-mode-alist
+      (cons '("\\.py$" . python-mode) auto-mode-alist))
+(setq interpreter-mode-alist
+      (cons '("python" . python-mode)
+            interpreter-mode-alist))
+(autoload 'python-mode "python-mode" "Python working mode." t)
+(setq-default tab-width 4)
+(setq-default indent-tabs-mode nil)
+(modify-coding-system-alist 'file "\\.py\\'" 'unix)
+
+;; ========== enhancement of next-error
+
+;; with this advice it highlights the error-line in the sourcebuffer.
+
+(defvar compilation-source-buffer-overlay (make-overlay 1 1)
+  "Internal overlay used for the error-line in the source-buffer")
+
+(defcustom compilation-highlight-source-buffer 'highlight
+  "*If not nil and a face then highlight the error-line in the source- buffer with this face."
+  :group 'compilation
+  :set '(lambda (symbol value)
+          (set symbol value)
+          (if (and value (facep value))
+              (overlay-put compilation-source-buffer-overlay 'face value)))
+  :type '(radio (const :tag "No error-line highlighting" :value nil)
+                (face :tag "Face for the error-line")))
+
+(add-hook 'pre-command-hook
+          (lambda ()
+            (delete-overlay compilation-source-buffer-overlay)))
+
+(defadvice next-error (after source-highlight activate)
+  "Highlights in the source-buffer the line with the error."
+  (when compilation-highlight-source-buffer
+    (delete-overlay compilation-source-buffer-overlay)
+    (move-overlay compilation-source-buffer-overlay
+                  (line-beginning-position)
+                  (line-end-position))))
+
+;; ========== compilation enhancement
+
+(defun my-compilation-finish-function (buf str)
+  "If no errors, make the compilation window go away in a few seconds"
+  (if (null (string-match ".*exited abnormally.*" str))
+      ;;no errors, make the compilation window go away in a few seconds
+      (progn
+        (run-at-time
+         "1 sec" nil 'delete-windows-on
+         (get-buffer-create "*compilation*"))
+        (message "******** NO ERROR ********"))
+    ;;there were errors, so jump to the first error
+    (next-error)))
+
+(setq compilation-finish-function 'my-compilation-finish-function)
+
+;; ========== custom compilation targets
+
+(defun my-compile-vm()
+  (interactive)
+  (find-file "/home/dmitrif/dev/head/projects/server/plugins/vmm/Makefile")
+  (compile "make"))
+
+(defun my-recompile()
+  (interactive)
+  (recompile))
+
+(defun my-check()
+  (interactive)
+  (find-file "Makefile")
+  (compile "make check"))
+
+;; ================= the bubble buffer
+
+(defconst my-ignore-re
+  (concat
+   "^ "                                 ;hidden buffers
+   "\\|completion\\|summary"
+   "\\|buffer list\\|help\\|ispell"
+   "\\|post\\|tff"
+   "\\|Messages\\|Compile-Log"
+   )
+  "*Buffers to ignore when changing to another.")
+
+(defun my-next (list)
+  "Switch to next buffer in list skipping unwanted ones."
+  (let* ((ptr list)
+         (re  my-ignore-re)
+         bf bn go
+         )
+
+    (while (and ptr (null go))
+      (setq bf (car ptr)  bn (buffer-name bf))
+      (if (null (string-match re bn))   ;skip over
+          (setq go bf)
+        (setq ptr (cdr ptr))
+        )
+
+      )
+    (if go
+        (switch-to-buffer go))
+    ))
+
+(defun my-prev-buffer ()
+  "Switch to previous buffer in current window."
+  (interactive)
+  (my-next (reverse (buffer-list))))
+
+(defun my-next-buffer ()
+  "Switch to the other buffer (2nd in list-buffer) in current window."
+  (interactive)
+  (bury-buffer (current-buffer))
+  (my-next (buffer-list)))
+
+;;; =============== bookmarks
+
+(defun my-bookmark-menu-jump ()
+  (interactive)
+  (bookmark-jump (x-popup-menu
+                  (list '(400 200) (selected-window))
+                  (bookmark-menu-build-paned-menu
+                   "Select bookmark"
+                   (bookmark-all-names)))))
+
+;;; ============ Xandros C++ coding style
+
+(defconst my-c-style
+  '((c-tab-always-indent         . t)
+    (c-comment-only-line-offset  . 0)
+    (c-hanging-braces-alist      . ((substatement-open after)
+                                    (brace-list-open)))
+    (c-hanging-colons-alist      . ((member-init-intro before)
+                                    (inher-intro)
+                                    (case-label after)
+                                    (label after)
+                                    (access-label after)))
+    (c-cleanup-list              . (scope-operator
+                                    empty-defun-braces
+                                    defun-close-semi))
+    (c-offsets-alist             . ((arglist-close .
+                                                   c-lineup-arglist)
+                                    (substatement-open . 0)
+                                    (case-label        . 2)
+                                    (block-open        . 0)
+                                    (knr-argdecl-intro . -)))
+    (c-echo-syntactic-information-p . t))
+  "My C Programming Style")
+
+;; offset customizations not in my-c-style
+(setq c-offsets-alist '((member-init-intro . ++)))
+
+(defun my-c-mode-common-hook ()
+  (c-add-style "PERSONAL" my-c-style t)
+  (setq c-basic-offset 2)
+  (setq tab-width 2)
+  (setq indent-tabs-mode 1)
+  (define-key c-mode-base-map "\C-m" 'newline-and-indent))
+
+(add-hook 'c-mode-common-hook 'my-c-mode-common-hook)
+(add-hook 'c-mode-hook 'turn-on-font-lock)
+(add-hook 'c++-mode-hook 'turn-on-font-lock)
+
+;; h file is in c++ mode
+(setq auto-mode-alist
+      (append '(("\\.h$"    . c++-mode)) auto-mode-alist))
+
+;; section collapse
+(defun my-outline-minor-mode-keys ()
+  (define-key outline-minor-mode-map (kbd "<C-kp-subtract>") 'hide-subtree)
+  (define-key outline-minor-mode-map (kbd "<C-kp-add>") 'show-subtree))
+
+(add-hook 'outline-minor-mode-hook 'my-outline-minor-mode-keys)
+
+;;; =============  abbrevs that work in c++ mode and else
+;;; note it fefers to a file ~/abbrev_defs
+
+(defvar my-abbrev-tables nil)
+(defun my-abbrev-hook ()
+  (let ((def (assoc (symbol-name last-abbrev) my-abbrev-tables)))
+    (when def
+      (execute-kbd-macro (cdr def)))
+    t))
+(put 'my-abbrev-hook 'no-self-insert t)
+(defmacro declare-abbrevs (table abbrevs)
+  (if (consp table)
+      `(progn ,@(loop for tab in table
+                      collect `(declare-abbrevs ,tab ,abbrevs)))
+    `(progn
+       ,@(loop for abbr in abbrevs
+               do (when (third abbr)
+                    (push (cons (first abbr) (read-kbd-macro (third abbr)))
+                          my-abbrev-tables))
+               collect `(define-abbrev ,table
+                          ,(first abbr) ,(second abbr) ,(and (third abbr)
+                                                             ''my-abbrev-hook))))))
+(put 'declare-abbrevs 'lisp-indent-function 2)
+(setq abbrev-file-name "~/abbrev_defs")
+(quietly-read-abbrev-file)
+(setq default-abbrev-mode t)
+
+;;; ========== custom key bindings and commands
+
+(global-set-key (kbd "M-<return>") 'complete-tag)
+(global-set-key (kbd "M-/") 'hippie-expand)
+
+(global-set-key (kbd "\C-x\C-m") 'execute-extended-command)
+(global-set-key (kbd "\C-c\C-m") 'execute-extended-command)
+
+(global-set-key (kbd "\C-w") 'backward-kill-word)
+(global-set-key (kbd "\C-x\C-k") 'kill-region)
+(global-set-key (kbd "\C-c\C-k") 'kill-region)
+
+(global-set-key (kbd "M-s") 'isearch-forward-regexp)
+(global-set-key (kbd "M-r") 'isearch-backward-regexp)
+
+(global-set-key [f9] 'my-compile-vm)
+(global-set-key [(shift-f9)] 'my-recompile)
+(global-set-key [(M-f9)] 'my-check)
+(global-set-key [C-M-up] 'next-error)
+(global-set-key [C-M-down] 'previous-error)
+(global-set-key "\C-g" 'goto-line)      ; [Ctrl]-[g]
+
+(global-set-key [(f2)] 'bookmark-set)
+(global-set-key [(shift f2)] 'bookmark-delete)
+(global-set-key [(control f2)] 'bookmark-bmenu-list)
+(global-set-key [(meta f2)] 'my-bookmark-menu-jump )
+
+(global-set-key [M-up] 'my-next-buffer)
+(global-set-key [M-down] 'my-prev-buffer)
+
+(global-set-key [f10] 'plan)
+(global-set-key [f11] 'planner-create-task-from-buffer)
+(global-set-key [f12] 'remember)
+
+(global-set-key [(meta backspace)] 'undo) ;; also C_
+(global-set-key [(meta shift backspace)] 'redo)
+
+(defun my-doc-dv-framework-guide ()
+  (interactive)
+  (switch-to-buffer (find-file-noselect "/usr/share/doc/XMC_Plugin_Developers_Guide/DaVinciFramework.html"))
+  )
+
+
+;;(server-start)
+
+;; TODO
+;; inl files as C++ mode
+;; auto-fill-mode
+;; tabify and  untabify
+;; indent-region
+
